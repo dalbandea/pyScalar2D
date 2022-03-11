@@ -8,10 +8,10 @@ from functions import *
 
 N = 32
 d = 2
-k = 0.3
+beta = 0.3
 l = 0.02
 
-lattice = Lattice(N, d, k, l)
+lattice = Lattice(N, d, beta, l)
 
 
 print("burn in...\n")

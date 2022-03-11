@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 sns.set_style('whitegrid')
 
-if torch.cuda.is_available():
+if torch.cuda.is_available() and False:
     torch_device = 'cuda'
     float_dtype = np.float32 # single
     torch.set_default_tensor_type(torch.cuda.FloatTensor)

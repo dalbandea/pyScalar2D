@@ -1,6 +1,6 @@
 import numpy as np
 
-from utils import jackknife
+from .utils import jackknife
 
 
 def get_mag(cfgs: np.ndarray):
