@@ -8,10 +8,6 @@ import packaging.version
 if packaging.version.parse(torch.__version__) < packaging.version.parse('1.5.0'):
     raise RuntimeError('Torch versions lower than 1.5.0 not supported')
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set_style('whitegrid')
-
 if torch.cuda.is_available() and False:
     torch_device = 'cuda'
     float_dtype = np.float32 # single
