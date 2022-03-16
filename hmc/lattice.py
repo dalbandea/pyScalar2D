@@ -1,7 +1,7 @@
 import numpy as np
 # import autograd.numpy as np
 import copy
-from autograd import elementwise_grad
+# from autograd import elementwise_grad
 
 
 class Lattice:

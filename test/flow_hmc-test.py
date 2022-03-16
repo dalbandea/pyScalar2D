@@ -1,5 +1,4 @@
 import sys
-# sys.path.append('/home/david/git/dalbandea/phd/codes/3-Phi4/pyScalar2D')
 sys.path.append('.')
 
 import numpy as np
