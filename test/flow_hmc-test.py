@@ -3,10 +3,22 @@ sys.path.append('/home/david/git/dalbandea/phd/codes/3-Phi4/pyScalar2D')
 
 import numpy as np
 import time
+import argparse
 from network import *
 from hmc import *
 
 print(f"TORCH DEVICE: {torch_device}")
+
+parser = argparse.ArgumentParser()
+# -n NTRAJ -t TAU -ns NSTEPS
+parser.add_argument("-n", "--ntraj", help="Number of trajectories", default=10,
+        type=int)
+parser.add_argument("-t", "--tau", help="HMC trajectory length", default=1.0,
+        type=float)
+parser.add_argument("-ns", "--nsteps", help="Number of integration steps",
+        default=10, type=int)
+args = parser.parse_args()
+
 
 # Lattice Theory
 L = 8
@@ -30,10 +42,12 @@ model = {'layers': layers, 'prior': prior}
 phi4action = ScalarPhi4ActionBeta(beta=beta, lam=lmbda) # Returns action of a torch array containing configurations. Check network.py
 
 # HMC parameters
-tau = 1.0
-n_steps = 10
-n_traj = 10
+tau = args.tau
+n_steps = args.nsteps
+n_traj = args.ntraj
 
+# Saving file ID
+file_ID = "_b"+str(beta)+"_l"+str(lmbda)+"_ns"+str(n_steps)
 
 use_pretrained = True
 
@@ -50,14 +64,15 @@ else:
 
 
 phi = torch.ones((1,L,L))
-mags = []
 times = []
 
-for i in range(n_traj):
-    start = time.time()
-    flow_hmc(phi, model['layers'], phi4action, tau=tau, n_steps=n_steps)
-    mags.append(magnetization(phi))
-    end = time.time()
-    times.append(end-start)
+with open("results"+file_ID+".txt", "w") as file_object:
+    file_object.close()
 
-print(times)
+for i in range(n_traj):
+    flow_hmc(phi, model['layers'], phi4action, tau=tau, n_steps=n_steps,
+            reversibility=False)
+    mag_i = magnetization(phi).item()
+
+    with open("results"+file_ID+".txt", "a") as file_object:
+        file_object.write(str(mag_i)+"\n")

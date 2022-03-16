@@ -73,8 +73,12 @@ def flow_hmc(phi, coupling_layers, action, *, tau, n_steps, reversibility = Fals
     dH = flow_Hamiltonian(mom, phi_tilde, coupling_layers, action) - H_0
     
     if reversibility:
-        flow_leapfrog(-mom, phi_tilde, coupling_layers, action, tau = tau, n_steps = n_steps)
-        phi_aux = apply_flow_to_fields(phi_tilde, coupling_layers, action)[0].detach()
+        phi_tilde_cp = torch.clone(phi_tilde).detach()
+        phi_tilde_cp.requires_grad = True
+        phi_tilde_cp.grad = torch.zeros(phi_tilde_cp.shape)
+
+        flow_leapfrog(-mom, phi_tilde_cp, coupling_layers, action, tau = tau, n_steps = n_steps)
+        phi_aux = apply_flow_to_fields(phi_tilde_cp, coupling_layers, action)[0].detach()
         print("Reversibility: \sum (\Delta \phi)^2 = ", torch.sum((phi_aux - phi)**2))
 
     if dH > 0:
@@ -89,8 +93,8 @@ def flow_Hamiltonian(mom, phi_tilde, coupling_layers, action):
     Computes the Hamiltonian of `flow_hmc` function.
     """
     phi_aux, S, logJ = apply_flow_to_fields(phi_tilde, coupling_layers, action)
-    H = 0.5 * torch.sum(mom**2) + S.detach().numpy()[0] + logJ.detach().numpy()[0]
-    return H
+    H = 0.5 * torch.sum(mom**2) + S.detach() + logJ.detach()
+    return H.item()
 
 
 def flow_leapfrog(mom, phi, coupling_layers, action, *, tau, n_steps):
