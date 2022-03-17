@@ -88,6 +88,5 @@ for epoch in range(N_epoch+1):
 
     if epoch % 100 == 0:
         print("Epoch ", epoch, " of ", N_epoch)
-
-# Save data
-save_model(writedir+save_filename, model, history)
+        # Save data
+        save_model(writedir+save_filename, model, history)
