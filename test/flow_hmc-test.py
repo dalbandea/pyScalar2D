@@ -10,7 +10,7 @@ from hmc import *
 print(f"TORCH DEVICE: {torch_device}")
 
 parser = argparse.ArgumentParser()
-# -n NTRAJ -t TAU -ns NSTEPS
+# python3 test/flow_hmc-test.py -n NTRAJ -t TAU -ns NSTEPS
 parser.add_argument("-n", "--ntraj", help="Number of trajectories", default=10,
         type=int)
 parser.add_argument("-t", "--tau", help="HMC trajectory length", default=1.0,
@@ -46,7 +46,7 @@ n_steps = args.nsteps
 n_traj = args.ntraj
 
 # Saving file ID
-file_ID = "_b"+str(beta)+"_l"+str(lmbda)+"_ns"+str(n_steps)+"_t"+str(tau)+"_mag"
+file_ID = "L"+str(L)+"_b"+str(beta)+"_l"+str(lmbda)+"_ns"+str(n_steps)+"_t"+str(tau)+"_mag"
 
 # Load model
 load_model("dumps/L8_b0.25_l0.5_E1000_B500_LOSSdkl_model.pth", model['layers'])
