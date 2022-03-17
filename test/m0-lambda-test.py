@@ -7,7 +7,7 @@ from importlib import reload
 import numpy as np
 import matplotlib.pyplot as plt
 
-if torch.cuda.is_available():
+if torch.cuda.is_available() and False:
     torch_device = 'cuda'
     float_dtype = np.float32 # single
     torch.set_default_tensor_type(torch.cuda.FloatTensor)
@@ -52,6 +52,7 @@ history = {
     'ess' : []
 }
 
+
 # Training
 def calc_dkl(logp, logq):
     return (logq - logp).mean()  # reverse KL, assuming samples from q
@@ -88,7 +89,8 @@ def print_metrics(history, avg_last_N_epochs):
 # Main loop
 for era in range(N_era):
     for epoch in range(N_epoch):
-        train_step(model, phi4_action, calc_dkl, optimizer, history)
+        train_step(model, phi4_action, calc_dkl, optimizer, history,
+                batch_size=batch_size)
         if epoch % print_freq == 0:
             print_metrics(history, avg_last_N_epochs=print_freq)
 

@@ -56,14 +56,14 @@ class ScalarPhi4Action:
         self.lam = lam
     def __call__(self, cfgs):
         # potential term
-        action_density = self.M2*cfgs**2 + self.lam*cfgs**4
+        action_density = 1.0/2.0*self.M2*cfgs**2 + self.lam*cfgs**4
         # kinetic term (discrete Laplacian)
         Nd = len(cfgs.shape)-1
         dims = range(1,Nd+1)
         for mu in dims:
-            action_density += 2*cfgs**2
-            action_density -= cfgs*torch.roll(cfgs, -1, mu)
-            action_density -= cfgs*torch.roll(cfgs, 1, mu)
+            action_density += 2*cfgs**2/2.0
+            action_density -= cfgs*torch.roll(cfgs, -1, mu)/2.0
+            action_density -= cfgs*torch.roll(cfgs, 1, mu)/2.0
         return torch.sum(action_density, dim=tuple(dims))
 
 class ScalarPhi4ActionBeta:
@@ -143,19 +143,3 @@ def make_phi4_affine_layers(*, n_layers, lattice_shape, hidden_sizes, kernel_siz
         coupling = AffineCoupling(net, mask_shape=lattice_shape, mask_parity=parity)
         layers.append(coupling)
     return torch.nn.ModuleList(layers)
-
-
-
-
-# Telemetry
-def compute_ess(logp, logq):
-    logw = logp - logq
-    log_ess = 2*torch.logsumexp(logw, dim=0) - torch.logsumexp(2*logw, dim=0)
-    ess_per_cfg = torch.exp(log_ess) / len(logw)
-    return ess_per_cfg
-
-def print_metrics(history, avg_last_N_epochs):
-    print(f'== Era {era} | Epoch {epoch} metrics ==')
-    for key, val in history.items():
-        avgd = np.mean(val[-avg_last_N_epochs:])
-        print(f'\t{key} {avgd:g}')
