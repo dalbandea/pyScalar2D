@@ -1,3 +1,7 @@
+print("###################")
+print("#### flow HMC #####")
+print("###################")
+
 import sys
 sys.path.append('.')
 
@@ -9,22 +13,26 @@ from hmc import *
 
 print(f"TORCH DEVICE: {torch_device}")
 
+
 parser = argparse.ArgumentParser()
 # python3 test/flow_hmc-test.py -n NTRAJ -t TAU -ns NSTEPS
-parser.add_argument("-n", "--ntraj", help="Number of trajectories", default=10,
-        type=int)
-parser.add_argument("-t", "--tau", help="HMC trajectory length", default=1.0,
-        type=float)
-parser.add_argument("-ns", "--nsteps", help="Number of integration steps",
-        default=10, type=int)
+parser.add_argument("-n", "--ntraj", help="Number of trajectories", type=int, required=True)
+parser.add_argument("-t", "--tau", help="HMC trajectory length", default=1.0, type=float)
+parser.add_argument("-ns", "--nsteps", help="Number of integration steps", default=10, type=int)
+parser.add_argument("-m", "--model", help="Path to pytorch model", type=str, required=True)
 args = parser.parse_args()
 
 
+def parse_info(info, c):
+    return info.split(c)[1].split("_")[0]
+
+model_name = args.model.split("/")[1]
+
 # Lattice Theory
-L = 8
+L = int(parse_info(model_name, "L"))
 lattice_shape = (L,L)
-beta = 0.25
-lmbda = 0.5
+beta = float(parse_info(model_name, "b"))
+lmbda = float(parse_info(model_name, "l"))
 
 # NN Model
 prior = SimpleNormal(torch.zeros(lattice_shape), torch.ones(lattice_shape))
@@ -49,8 +57,19 @@ n_traj = args.ntraj
 file_ID = "L"+str(L)+"_b"+str(beta)+"_l"+str(lmbda)+"_ns"+str(n_steps)+"_t"+str(tau)+"_mag"
 
 # Load model
-load_model("dumps/L8_b0.25_l0.5_E1000_B500_LOSSdkl_model.pth", model['layers'])
+load_model(args.model, model['layers'])
 model['layers'].eval()
+
+print("###### INFO #####")
+print("L    =   ", lattice_shape)
+print("beta =   ", phi4action.beta)
+print("lam  =   ", phi4action.lam)
+print("model=   ", args.model)
+print("save =   ", file_ID)
+print("tau  =   ", tau)
+print("nstep=   ", n_steps)
+print("ntraj=   ", n_traj)
+print("###### INFO #####")
 
 phi = torch.ones((1,L,L))
 
