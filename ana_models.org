@@ -1,0 +1,415 @@
+#+TITLE: Normalizing flows
+#+AUTHOR: David Albandea
+# #+latex_header: \documentclass[12pt,oneside,DIV=10]{article}
+# #+latex_header: \input{/home/david/texmf/david/template.tex}
+# #+PROPERTY: header-args :eval never-export
+
+* Function definitions
+** Python
+
+*** Libraries
+
+#+begin_src python
+import sys
+sys.path.append(".")
+
+import os
+import numpy as np
+import itertools
+import matplotlib.pyplot as plt
+from network import *
+#+end_src
+
+#+RESULTS:
+
+*** Filtering utilities
+
+#+begin_src python
+def filterdir(texts, wdir):
+    dir_lst = list(os.walk(wdir))[0][2]
+    filtered_lst = dir_lst.copy()
+    for text in texts:
+        filtered_lst = [k for k in filtered_lst if text in k]
+    print(filtered_lst)
+    return filtered_lst
+
+def printdir(wdir):
+    dir_lst = list(os.walk(wdir))[0][2]
+    print("hi")
+    return dir_lst
+#+end_src
+
+#+RESULTS:
+
+*** File-reader utilities
+
+#+begin_src python
+def read_file(filepath):
+    data = np.loadtxt(filepath)
+    loss = list(data[:,0])
+    ess = list(data[:,1])
+    return loss, ess
+#+end_src
+
+#+RESULTS:
+
+*** Analyzer functions
+#+begin_src python
+def ana_files(*args, wdir):
+    dir_lst = list(os.walk(wdir))[0][2]
+    losses  = []
+    esss    = []
+    filepaths = []
+    for arg in itertools.product(*args):
+        print(str(arg))
+        for filepath in filterdir(arg, wdir):
+            print(filepath)
+            loss, ess = read_file(wdir+filepath)
+            losses.append(loss)
+            esss.append(ess)
+            filepaths.append(filepath)
+    plot_batch(losses, filepaths, "loss")
+    plot_batch(esss, filepaths, "ess")
+
+def plot_batch(data, labels, title):
+    for i in range(len(data)):
+        plt.plot(range(len(data[i])), data[i], label=labels[i])
+    plt.title(title)
+    plt.xlabel("Epochs")
+    plt.legend()
+    plt.show()
+
+def get_acceptance(datafile, phi4_action, lattice_shape):
+    # Load model
+    prior = SimpleNormal(torch.zeros(lattice_shape), torch.ones(lattice_shape))
+    n_layers = 16
+    hidden_sizes = [8,8]
+    kernel_size = 3
+    layers = make_phi4_affine_layers(lattice_shape=lattice_shape,
+            n_layers=n_layers, hidden_sizes=hidden_sizes, kernel_size=kernel_size)
+    model = {'layers': layers, 'prior': prior}
+
+    load_model(datafile, model['layers'])
+    model['layers'].eval()
+
+    ensemble_size = 1000
+    phi4_ens = make_mcmc_ensemble(model, phi4_action, batch_size=64, N_samples=ensemble_size)
+    meanacc = np.mean(phi4_ens["accepted"])
+    return meanacc, np.std(phi4_ens["accepted"])/np.sqrt(len(phi4_ens["accepted"]))
+#+end_src
+
+#+RESULTS:
+
+*** Deprecated functions
+
+#+begin_src python
+def ana_acc(lambdas, batches, wdir, phi4_action, lattice_shape):
+    dir_lst = list(os.walk(wdir))[0][2]
+    for lam in lambdas:
+        print("######### lam = ", lam, "#########")
+        for batch in batches:
+            datafiles = [k for k in dir_lst if ("model" in k and lam in k and batch in k)]
+            print("· Batch = ", batch)
+            for datafile in datafiles:
+                acc = get_acceptance(wdir+datafile, phi4_action, lattice_shape)
+                print("     Acceptance = ", acc)
+
+def print_matching_files(*args, wdir):
+    dir_lst = list(os.walk(wdir))[0][2]
+    filepaths = []
+    for arg in itertools.product(*args):
+        for filepath in filterdir(arg, wdir):
+            filepaths.append(filepath)
+    return filepaths
+#+end_src
+
+** Julia
+
+*** Libraries
+#+begin_src jupyter-julia
+using ADerrors, DelimitedFiles, Statistics, Plots, DataFrames
+pyplot()
+#+end_src
+
+#+RESULTS:
+: Plots.PyPlotBackend()
+
+*** Filtering utilities and parsing
+#+begin_src jupyter-julia
+
+filterdir(dir::String, text::String) = filterdir(dir, [text])
+
+"""
+Returns vector of Strings with occurrences in the directory using regex, but
+must escape \$ with \\.
+"""
+function filterdir(dir::String, texts::Array{String})
+    dirfiles = readdir(dir)
+    occurrences = filter(s -> occursin(Regex("$(texts[1])"), s), dirfiles)
+    for text in texts
+        occurrences = filter(s -> occursin(Regex("$text"), s), occurrences)
+    end
+    return occurrences
+end
+
+"""
+Parses and returns information available in string `info`.
+"""
+function parse_info(info::String)
+    L = parse(Int64, get_param(info, "L"))
+    println("hi")
+    beta = parse(Float64, get_param(info, "_b"))
+    tau = parse(Float64, get_param(info, "_t"))
+    nsteps = parse(Int64, get_param(info, "_ns"))
+    return L, beta, tau, nsteps
+end
+
+function get_param(info::String, c::String)
+    # Grabs the expression in parenthesis, which is whatever thing next to $c
+    # except an underscore.
+    return replace(info, Regex(".*$c([^_]*).*") => s"\1")
+end
+#+end_src
+
+#+RESULTS:
+: get_param (generic function with 1 method)
+
+*** Analyzer functions
+
+#+begin_src jupyter-julia
+
+function print_mags(file::String; plotting::Bool=false)
+    mags = readdlm(file) |> vec
+    n_cfgs = length(mags)
+    acc = mags .!= circshift(mags, 1)
+
+    M = uwreal(mags, file)
+    uwerr(M)
+    println("   - Acc   =   ", mean(acc))
+    println("   - M     =   ", value(M), " ± ", err(M))
+    println("   - τᵢ    =   ", taui(M, file), " ± ", dtaui(M, file))
+    println("   - N cfgs=   ", n_cfgs)
+
+    # iw = window(M, file)
+    # println("WINDOW: ", iw)
+    # r = rho(M, file)
+    # dr = drho(M, file)
+
+    # pl = plot(collect(1:2000), r[1:2000], yerr = dr[1:2000], seriestype = :scatter, title = "hi", label="autoCF")
+    # display(pl)
+
+    if plotting == true
+        pl = plot(1:length(mags), mags)
+        # pl = histogram(mags)
+        # plot!(pl, xlims=(1,10))
+        display(pl)
+    end
+    return [M, mean(acc), taui(M, file), dtaui(M, file)]
+end
+
+
+"""
+Given set of String arrays, constructs a Cartesian product of them to look for
+all the combinatorics in `wdir`.
+"""
+function ana_files(data...; wdir::String = ".", plotting::Bool=false)
+
+    gathered_data = dfheader = ["L", "beta", "tau", "ns", "M", "acc", "taui", "dtaui"]
+
+    for item in Iterators.product(data...)
+        for file in filterdir(wdir, [i for i in item])
+            println(file)
+            # Get info from the name of the file
+            info_file = parse_info(wdir*file)
+            # Get observables from magnetization
+            data_file = print_mags(wdir*file, plotting=plotting)
+            gathered_data = hcat(gathered_data, [info_file..., data_file...])
+            println("")
+        end
+    end
+
+    df = gathered_data |> permutedims |> x -> DataFrame(x[2:end,:], :auto)
+    rename!(df, Symbol.(dfheader))
+
+    return df
+end
+
+
+#+end_src
+
+#+RESULTS:
+: ana_files
+
+* Working section
+
+** TEST 5: flow HMC proof of concept
+*** Losses and Effective Sample Size at $\beta = 0.586-0.7$
+
+
+I trained networks at $\beta = \{0.586, 0.6, 0.65, 0.7\}$ to check if the normalizing
+normalizing flow could reduce autocorrelation times. The networks are stored in
+=dumps/= with the filename structure =LX_bX.X_lX.X_BX_LOSSX_history.txt=
+containing the KL divergence, =ess=, =logq= and =logp= histories, and
+=LX_bX.X_lX.X_BX_LOSSX_model.pth= for the PyTorch model, where
+- =L= indicates lattice size, int.
+- =b= is the $\beta$ value trained, float.
+- =l= is the $\lambda$ value, float.
+- =E= is the number of epochs, int.
+- =B= is the batch size, int.
+- =LOSS= is the loss function, string.
+
+
+#+begin_src python :results none
+working_dir = "dumps/"
+lambdas = ['l'+str(i) for i in [0.5]]
+betas   = ['b'+str(i)+'_' for i in [0.586, 0.6, 0.65, 0.7]]
+Ls      = ['b'+str(i) for i in [8]]
+#+end_src
+
+**** $\beta$ parametrization
+
+Run the following to plot the =loss= and =ess= histories of the files in ~test~.
+The function ~ana_files(betas, lambdas, Ls, ["history"], wdir=working_dir)~
+would consider all the combinatorics of the inputs. Beware that ~["history"]~
+bust me an input so that it does not consider the ~.pth~ models.
+
+#+begin_src python :results output
+
+# Analyze loss and ess
+## Beta parametrization
+
+test = ['L8_b0.586_l0.5_E5000_B250_LOSSdkl_history.txt',
+ 'L8_b0.6_l0.5_E5000_B250_LOSSdkl_history.txt',
+ 'L8_b0.65_l0.5_E5000_B250_LOSSdkl_history.txt',
+ 'L8_b0.7_l0.5_E5000_B250_LOSSdkl_history.txt']
+
+ana_files(test, wdir="dumps/")
+#+end_src
+
+#+RESULTS:
+#+begin_example
+('L8_b0.586_l0.5_E5000_B250_LOSSdkl_history.txt',)
+['L8_b0.586_l0.5_E5000_B250_LOSSdkl_history.txt']
+L8_b0.586_l0.5_E5000_B250_LOSSdkl_history.txt
+('L8_b0.6_l0.5_E5000_B250_LOSSdkl_history.txt',)
+['L8_b0.6_l0.5_E5000_B250_LOSSdkl_history.txt']
+L8_b0.6_l0.5_E5000_B250_LOSSdkl_history.txt
+('L8_b0.65_l0.5_E5000_B250_LOSSdkl_history.txt',)
+['L8_b0.65_l0.5_E5000_B250_LOSSdkl_history.txt']
+L8_b0.65_l0.5_E5000_B250_LOSSdkl_history.txt
+('L8_b0.7_l0.5_E5000_B250_LOSSdkl_history.txt',)
+['L8_b0.7_l0.5_E5000_B250_LOSSdkl_history.txt']
+L8_b0.7_l0.5_E5000_B250_LOSSdkl_history.txt
+#+end_example
+
+**** $m$ parametrization
+
+#+begin_src python
+ana_files(['l8.0'], ['B250', 'B500', 'B1000', 'B2000'], ["history"], wdir=working_dir)
+#+end_src
+
+#+RESULTS:
+: None
+
+*** Model acceptance
+
+**** $\beta$ parametrization
+
+#+begin_src python
+## Beta parametrization
+from tqdm import tqdm
+
+L = 8
+lattice_shape = (L,L)
+beta = 0.7
+lam = 0.5
+phi4_action = ScalarPhi4ActionBeta(beta=beta, lam=lam)
+
+accs = []
+for i in tqdm(range(500)):
+    acc, accstd = get_acceptance('dumps/L8_b0.7_l0.5_E5000_B250_LOSSdkl_model.pth', phi4_action, lattice_shape)
+    accs.append(acc)
+#+end_src
+
+#+RESULTS:
+: 100%|██████████████████████████████████████████████████████████| 10/10 [00:05<00:00,  1.97it/s]
+
+*** flow HMC autocorrelation time
+
+Here we analyze the autocorrelation of the flow HMC
+
+#+RESULTS:
+: "/home/david/git/dalbandea/phd/codes/3-Phi4/pyScalar2D"
+
+#+begin_src jupyter-julia :results raw
+wdir    = "results/flow_hmc_autocorr/"
+taus    = "t"   .* string.([1.0])
+nss     = "ns"  .* string.([15])
+betas   = "b"   .* string.([0.7])
+
+results = ana_files(nss, taus, wdir=wdir)
+
+# results[results.acc .> 0.8, :]
+
+# print_mags("mags_plainhmc.txt", plotting=true)
+
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+#+begin_example
+L8_b0.586_l0.5_ns15_t1.0_mag.txt
+hi
+   - Acc   =   0.9144939725259321
+   - M     =   -0.0046547361325816996 ± 0.005469210576686525
+   - τᵢ    =   3.683364872802397 ± 0.35604538717103257
+   - N cfgs=   28536
+
+L8_b0.65_l0.5_ns15_t1.0_mag.txt
+hi
+   - Acc   =   0.8926355352267489
+   - M     =   -0.002741895374189993 ± 0.01656612394285836
+   - τᵢ    =   12.09351426093583 ± 1.94540781616366
+   - N cfgs=   28203
+
+L8_b0.6_l0.5_ns15_t1.0_mag.txt
+hi
+   - Acc   =   0.9133482111723272
+   - M     =   -0.003115620049560951 ± 0.006076615135018431
+   - τᵢ    =   3.6889486898701658 ± 0.35569377028373833
+   - N cfgs=   28678
+
+L8_b0.7_l0.5_ns15_t1.0_mag.txt
+hi
+   - Acc   =   0.9312020280261953
+   - M     =   -0.0025753850178624675 ± 0.08133591393705313
+   - τᵢ    =   148.39709352037448 ± 64.25680567527183
+   - N cfgs=   28402
+#+end_example
+\begin{tabular}{r|cccccccc}
+	& L & \$\textbackslash{}beta\$ & tau & ns & M & acc & taui & dtaui\\
+	\hline
+	& Any & Any & Any & Any & Any & Any & Any & Any\\
+	\hline
+	1 & 8 & 0.586 & 1.0 & 15 & -0.00465474 +/- 0.00546921 & 0.914494 & 3.68336 & 0.356045 \\
+	2 & 8 & 0.65 & 1.0 & 15 & -0.0027419 +/- 0.0165661 & 0.892636 & 12.0935 & 1.94541 \\
+	3 & 8 & 0.6 & 1.0 & 15 & -0.00311562 +/- 0.00607662 & 0.913348 & 3.68895 & 0.355694 \\
+	4 & 8 & 0.7 & 1.0 & 15 & -0.00257539 +/- 0.0813359 & 0.931202 & 148.397 & 64.2568 \\
+\end{tabular}
+:END:
+*** Results
+
+| $\beta$ | Acceptance NN | $\tau$ flowed HMC | $\tau$ plain HMC |
+|---------+---------------+-------------------+------------------|
+|   0.586 |      0.379(2) |          3.68(36) |         21.7(19) |
+|     0.6 |      0.418(2) |          3.69(36) |         27.9(28) |
+|    0.65 |      0.342(4) |          12.1(19) |           71(10) |
+|     0.7 |      0.507(3) |           148(64) |         720(240) |
+
+** flow HMC investigations
+
+*** $\beta=0.7$
+
+#+begin_src python
+
+#+end_src

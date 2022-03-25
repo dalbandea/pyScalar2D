@@ -46,12 +46,8 @@ def make_mcmc_ensemble(model, action, *, batch_size, N_samples):
         history['logq'].append(new_logq)
         history['x'].append(new_x)
         history['accepted'].append(accepted)
-        acc = np.mean(history['accepted'])
 
-    del sample_gen
-    del history
-
-    return acc
+    return history
 
 
 def slow_make_mcmc_ensemble(model, action, *, batch_size, N_samples):
